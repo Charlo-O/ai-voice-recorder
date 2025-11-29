@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { FIRESTORE_DB, NOTE_COLLECTION } from '@/utils/FirebaseConfig';
-import { toast } from 'sonner-native';
+import { LocalStorage, Note } from '@/utils/Storage';
 
 /**
  * Page component for editing and deleting a note
@@ -20,10 +18,19 @@ const Page = () => {
   useEffect(() => {
     const loadNote = async () => {
       if (id) {
-        const noteRef = doc(FIRESTORE_DB, NOTE_COLLECTION, id);
-        const noteSnap = await getDoc(noteRef);
-        if (noteSnap.exists()) {
-          setNote(noteSnap.data().text);
+        try {
+          const notes = await LocalStorage.getNotes();
+          const foundNote = notes.find(n => n.id === id);
+          if (foundNote) {
+            setNote(foundNote.text);
+          } else {
+            Alert.alert('Error', 'Note not found');
+            router.back();
+          }
+        } catch (error) {
+          console.error('Error loading note:', error);
+          Alert.alert('Error', 'Failed to load note');
+          router.back();
         }
       }
     };
@@ -31,35 +38,56 @@ const Page = () => {
   }, [id]);
 
   /**
-   * Handles updating the note in Firestore
+   * Handles updating the note in local storage
    */
   const handleUpdate = async () => {
+    if (!note.trim()) {
+      Alert.alert('Error', 'Please enter some text');
+      return;
+    }
+
     if (id) {
-      const noteRef = doc(FIRESTORE_DB, NOTE_COLLECTION, id);
-      updateDoc(noteRef, {
-        text: note,
-        preview: note.length > 40 ? note.slice(0, 40) + '...' : note,
-      });
-      toast.success('Changes saved', {
-        description: 'Your changes have been saved successfully',
-        closeButton: true,
-      });
-      router.back();
+      try {
+        await LocalStorage.updateNote(id, {
+          text: note,
+          preview: note.length > 40 ? note.slice(0, 40) + '...' : note,
+        });
+        Alert.alert('Success', 'Changes saved successfully');
+        router.back();
+      } catch (error) {
+        console.error('Error updating note:', error);
+        Alert.alert('Error', 'Failed to save changes');
+      }
     }
   };
 
   /**
-   * Handles deleting the note from Firestore
+   * Handles deleting the note from local storage
    */
   const handleDelete = async () => {
-    if (id) {
-      const noteRef = doc(FIRESTORE_DB, NOTE_COLLECTION, id);
-      deleteDoc(noteRef);
-      toast.info('Note deleted', {
-        description: 'Your note has been deleted successfully',
-      });
-      router.back();
-    }
+    Alert.alert(
+      'Delete Note',
+      'Are you sure you want to delete this note?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            if (id) {
+              try {
+                await LocalStorage.deleteNote(id);
+                Alert.alert('Success', 'Note deleted successfully');
+                router.back();
+              } catch (error) {
+                console.error('Error deleting note:', error);
+                Alert.alert('Error', 'Failed to delete note');
+              }
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (

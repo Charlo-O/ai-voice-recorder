@@ -1,10 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity } from 'react-native';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { FIRESTORE_DB, NOTE_COLLECTION } from '@/utils/FirebaseConfig';
-import { toast } from 'sonner-native';
-import { usePostHog } from 'posthog-react-native'
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { LocalStorage } from '@/utils/Storage';
 
 /**
  * Page component for handling new audio recordings and their transcription.
@@ -18,9 +15,6 @@ const Page = () => {
   const [isLoading, setIsLoading] = useState(false);
   // Router for navigation
   const router = useRouter();
-  // PostHog client
-  const posthog = usePostHog()
-
 
   // Effect to trigger transcription when the component mounts or URI changes
   useEffect(() => {
@@ -31,8 +25,12 @@ const Page = () => {
    * Handles the transcription of the audio file.
    */
   const handleTranscribe = async () => {
+    if (!uri) {
+      Alert.alert('Error', 'No audio file provided');
+      return;
+    }
+
     setIsLoading(true);
-    toast.loading('Loading...');
     try {
       const formData = new FormData();
       const audioData = {
@@ -53,26 +51,35 @@ const Page = () => {
       }).then((response) => response.json());
 
       setTranscription(response.text || 'No transcription available');
-      posthog.capture("transcribe_audio")
     } catch (error) {
       console.error('Error transcribing audio:', error);
+      Alert.alert('Error', 'Failed to transcribe audio. Please try again.');
     } finally {
       setIsLoading(false);
-      toast.dismiss();
     }
   };
 
   /**
-   * Handles saving the transcription to Firestore.
+   * Handles saving the transcription to local storage.
    */
   const handleSave = async () => {
-    addDoc(collection(FIRESTORE_DB, NOTE_COLLECTION), {
-      preview: transcription.length > 40 ? transcription.slice(0, 40) + '...' : transcription,
-      text: transcription,
-      createdAt: serverTimestamp(),
-    });
+    if (!transcription.trim()) {
+      Alert.alert('Error', 'Please enter some text to save');
+      return;
+    }
 
-    router.dismissAll();
+    try {
+      await LocalStorage.saveNote({
+        preview: transcription.length > 40 ? transcription.slice(0, 40) + '...' : transcription,
+        text: transcription,
+      });
+
+      Alert.alert('Success', 'Note saved successfully!');
+      router.dismissAll();
+    } catch (error) {
+      console.error('Error saving note:', error);
+      Alert.alert('Error', 'Failed to save note. Please try again.');
+    }
   };
 
   return (
@@ -85,8 +92,14 @@ const Page = () => {
         placeholder="Transcription will appear here..."
         editable={!isLoading}
       />
-      <TouchableOpacity style={styles.saveButton} onPress={handleSave} disabled={isLoading}>
-        <Text style={styles.saveButtonText}>Save Transcription</Text>
+      <TouchableOpacity 
+        style={[styles.saveButton, isLoading && styles.saveButtonDisabled]} 
+        onPress={handleSave} 
+        disabled={isLoading}
+      >
+        <Text style={styles.saveButtonText}>
+          {isLoading ? 'Transcribing...' : 'Save Transcription'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -115,6 +128,9 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 5,
     alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#ccc',
   },
   saveButtonText: {
     color: 'white',

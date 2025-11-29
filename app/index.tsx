@@ -3,8 +3,7 @@ import { Audio } from 'expo-av';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { onSnapshot, query, collection, orderBy } from 'firebase/firestore';
-import { FIRESTORE_DB, NOTE_COLLECTION } from '@/utils/FirebaseConfig';
+import { LocalStorage, Note } from '@/utils/Storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ListItem from '@/components/ListItem';
 
@@ -15,21 +14,23 @@ export default function Index() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const router = useRouter();
   const { bottom } = useSafeAreaInsets();
-  const [notes, setNotes] = useState<any[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
 
   useEffect(() => {
-    // Set up real-time listener for notes
-    const notesCollection = collection(FIRESTORE_DB, NOTE_COLLECTION);
-    const q = query(notesCollection, orderBy('createdAt', 'desc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notes = snapshot.docs.map((doc) => {
-        return { id: doc.id, ...doc.data() };
-      });
-      setNotes(notes);
-    });
-    return () => unsubscribe();
+    loadNotes();
   }, []);
+
+  /**
+   * Load notes from local storage
+   */
+  async function loadNotes() {
+    try {
+      const loadedNotes = await LocalStorage.getNotes();
+      setNotes(loadedNotes);
+    } catch (error) {
+      console.error('Error loading notes:', error);
+    }
+  }
 
   /**
    * Start recording audio
@@ -81,7 +82,7 @@ export default function Index() {
       <FlatList
         data={notes}
         renderItem={({ item }) => (
-          <ListItem id={item.id} preview={item.preview} createdAt={item.createdAt?.toDate()} />
+          <ListItem id={item.id} preview={item.preview} createdAt={item.createdAt} />
         )}
         keyExtractor={(item) => item.id}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
